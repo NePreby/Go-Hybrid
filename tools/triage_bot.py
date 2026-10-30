@@ -553,15 +553,22 @@ def cmd_board(args):
     if not args.post:
         print(md)
         return
+    # The board is only a view, so it need not live in the repo the scan reads
+    # from. A fork cannot write to its upstream: PATCH on an upstream issue is
+    # 403 "Resource not accessible by integration". `board_repo` lets the view
+    # be posted where the token can edit while the scan still reads the upstream
+    # PR list. It defaults to `repo`, leaving the single-repo case unchanged.
+    board_repo = cfg.get("board_repo") or cfg["repo"]
     _, srch = gh.req("GET", "/search/issues?q=%s" % quote(
-        'repo:%s is:issue is:open "%s" in:body' % (cfg["repo"], BOARD_MARKER)))
+        'repo:%s is:issue is:open "%s" in:body' % (board_repo, BOARD_MARKER)))
     hits = (srch or {}).get("items", [])
     if hits:
         n = hits[0]["number"]
-        gh.patch("/repos/%s/issues/%d" % (cfg["repo"], n), {"body": md})
-        log("board updated on #%d (%d calls, %s remaining)" % (n, gh.calls, gh.remaining))
+        gh.patch("/repos/%s/issues/%d" % (board_repo, n), {"body": md})
+        log("board updated on %s#%d (%d calls, %s remaining)"
+            % (board_repo, n, gh.calls, gh.remaining))
     else:
-        iss = gh.post("/repos/%s/issues" % cfg["repo"],
+        iss = gh.post("/repos/%s/issues" % board_repo,
                       {"title": "Triage Board (auto-updated daily — pin me)",
                        "body": md})
         log("board created: %s (%d calls)" % (iss.get("html_url"), gh.calls))
