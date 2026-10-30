@@ -37,6 +37,32 @@ from urllib.request import Request, urlopen
 CONFIG_PATH = Path(__file__).resolve().parent / "triage_config.json"
 DEFAULT_TOKEN_FILE = "/home/z/my-project/.gh_token"
 BOARD_MARKER = "triage-bot:board:v1"
+
+# GitHub rejects an issue body longer than this with 422 "body is too long".
+ISSUE_BODY_LIMIT = 65536
+
+
+def fit_issue_body(md):
+    """Trim a board to GitHub's issue-body limit, cutting on a line boundary.
+
+    With a few hundred open PRs the full tables do not fit and the POST comes
+    back 422. Losing the tail beats losing the whole board, but the issue has
+    to say it is cut, or a reader will trust a partial queue as complete.
+    """
+    if len(md) <= ISSUE_BODY_LIMIT:
+        return md
+    notice = (
+        "\n\n---\n\n**This board is truncated.** GitHub caps an issue body at "
+        "%d characters and the full board is %d, so the lowest-ranked rows are "
+        "cut. Run `python3 tools/triage_bot.py scan` locally for the complete "
+        "list." % (ISSUE_BODY_LIMIT, len(md))
+    )
+    cut = md[: ISSUE_BODY_LIMIT - len(notice)]
+    nl = cut.rfind("\n")
+    if nl > 0:
+        cut = cut[:nl]
+    return cut + notice
+
 API = "https://api.github.com"
 
 
@@ -553,6 +579,8 @@ def cmd_board(args):
     if not args.post:
         print(md)
         return
+    # The board is posted as an issue body, so it has to fit GitHub's cap.
+    md = fit_issue_body(md)
     # The board is only a view, so it need not live in the repo the scan reads
     # from. A fork cannot write to its upstream: PATCH on an upstream issue is
     # 403 "Resource not accessible by integration". `board_repo` lets the view
